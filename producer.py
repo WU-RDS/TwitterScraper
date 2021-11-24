@@ -1,17 +1,14 @@
 import logging
-
 import arrow, json, time
 
 from os.path import isfile
 from pathlib import Path
-
 from datetime import datetime
+
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 from utils import hash_dict
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
 
 "1) just loop from top to bottom"
 "2) if change occurs (rare) then start again from top and check where left off"
@@ -38,9 +35,9 @@ class PrioQueueHandler(FileSystemEventHandler):
                 or
                 event.src_path.split('/')[-1] == 'priority_queue.txt'
         ):
-            global current_todo
-            current_todo = get_next_todo()
-            print(f'new ToDo was added: {current_todo}')
+            global todo
+            todo = get_next_todo()
+            print(f'new ToDo was added: {todo}')
 
 
 event_handler = PrioQueueHandler()
@@ -84,31 +81,36 @@ def get_next_todo():
     return next_todo
 
 
+todo = get_next_todo()
 while True:
-    current_todo = get_next_todo()
 
-    while not current_todo:
+    while not todo:
         time.sleep(2)
 
-    logging.warning(f'NEW TODO: {current_todo}')
+    logging.warning(f'NEW TODO: {todo}')
 
-    keywords = current_todo['keywords']
-    output_folder = f'{"_".join(keywords)}'
+    keywords = todo['keywords']
+    output_folder = f'{"_".join(keywords)}_{hash_dict(todo)}'
     Path(f"./data/{output_folder}").mkdir(parents=True, exist_ok=True)
 
-    for d in arrow.Arrow.span_range('day', datetime.fromisoformat(current_todo['start']),
-                                    datetime.fromisoformat(current_todo['start'])):
+    current_todo = todo
+    for d in arrow.Arrow.span_range('day', datetime.fromisoformat(todo['start']), datetime.fromisoformat(todo['end'])):
+        if current_todo is not todo:
+            break
+
         s, e = d
 
-        # skip ever
-        base_name = f'./data/{output_folder}/{hash_dict(current_todo)}_{s.format("YYYY-MM-DD")}'
-
-        ## check if file already exists
+        ## skip ever if day for to_do already scraped
+        base_name = f'./data/{output_folder}/{s.format("YYYY-MM-DD")}'
         if isfile(f'{base_name}_raw.json'):
+            print('file already, skipping...')
             continue
-        time.sleep(1)
-        print(f'working on this day: {base_name}_raw.jsonl')
+        else:
+            time.sleep(1)
+            print(f'working on this day: {base_name}_raw.jsonl')
     else:
         with open('./todos/finished_jobs.txt', 'a') as af:
-            af.write(f'{json.dumps(current_todo)}\n')
+            af.write(f'{json.dumps(todo)}\n')
+        todo = get_next_todo()
+
 # experiment with this a lot

@@ -1,0 +1,2 @@
+{"keywords":["usa","covid","pfizer"],"start":"2019-10-22","end":"2021-10-23"}
+{"keywords":["perma","covid","usa"],"start":"2010-10-22","end":"2021-10-23"}

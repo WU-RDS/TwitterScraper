@@ -8,6 +8,9 @@ from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+import pika
+import sys
+
 from utils import hash_dict
 
 "1) just loop from top to bottom"
@@ -26,6 +29,16 @@ has default query... but you can add extra one if need be...
 '''
 give minimal logging output to let user know what something has been done...
 '''
+
+"needs to be resistant! i.e. if wrong json is entered it won't crash... and will just skip that line until one works... that is sensible..." \
+"does it the iterator get all actually?" \
+"implement manager of passwords..."
+
+connection = pika.BlockingConnection(
+    pika.ConnectionParameters(host='localhost'))
+channel = connection.channel()
+
+channel.queue_declare(queue='task_queue', durable=True)
 
 
 class PrioQueueHandler(FileSystemEventHandler):
@@ -91,6 +104,7 @@ while True:
 
     keywords = todo['keywords']
     output_folder = f'{"_".join(keywords)}_{hash_dict(todo)}'
+    query = f'({" OR ".join(keywords)}) -has:links -is:reply -is:retweet -has:videos -has:images -has:media lang:en'
     Path(f"./data/{output_folder}").mkdir(parents=True, exist_ok=True)
 
     current_todo = todo
@@ -107,6 +121,20 @@ while True:
             continue
         else:
             time.sleep(1)
+            msg_dct = {
+                "query": query,
+                "start": str(s),
+                "end": str(e),
+                "save_as": f'{base_name}_raw.jsonl'
+            }
+            channel.basic_publish(
+                exchange='',
+                routing_key='task_queue',
+                body=json.dumps(msg_dct),
+                properties=pika.BasicProperties(
+                    delivery_mode=1,  # 2 makes message persistent
+                )
+            )
             print(f'working on this day: {base_name}_raw.jsonl')
     else:
         with open('./todos/finished_jobs.txt', 'a') as af:

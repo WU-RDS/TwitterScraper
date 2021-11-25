@@ -37,6 +37,7 @@ give minimal logging output to let user know what something has been done...
 connection = pika.BlockingConnection(
     pika.ConnectionParameters(host='localhost'))
 channel = connection.channel()
+channel.queue_purge('task_queue')
 
 channel.queue_declare(queue='task_queue', durable=False)
 

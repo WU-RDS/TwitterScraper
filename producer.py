@@ -38,19 +38,19 @@ connection = pika.BlockingConnection(
     pika.ConnectionParameters(host='localhost'))
 channel = connection.channel()
 
-channel.queue_declare(queue='task_queue', durable=True)
+channel.queue_declare(queue='task_queue', durable=False)
 
 
 class PrioQueueHandler(FileSystemEventHandler):
     def on_modified(self, event):
+        global selected_todo
         if event.event_type == 'modified' and (
                 event.src_path.split('/')[-1] == 'perma_queue.txt'
                 or
                 event.src_path.split('/')[-1] == 'priority_queue.txt'
         ):
-            global todo
-            todo = get_next_todo()
-            print(f'new ToDo was added: {todo}')
+            selected_todo = get_next_todo()
+            print(f'new ToDo was added: {selected_todo}')
 
 
 event_handler = PrioQueueHandler()
@@ -94,51 +94,63 @@ def get_next_todo():
     return next_todo
 
 
-todo = get_next_todo()
-while True:
+def produce():
+    global selected_todo
+    selected_todo = get_next_todo()
+    while True:
 
-    while not todo:
-        time.sleep(2)
+        while not selected_todo:
+            time.sleep(2)
 
-    logging.warning(f'NEW TODO: {todo}')
+        logging.warning(f'NEW TODO: {selected_todo}')
 
-    keywords = todo['keywords']
-    output_folder = f'{"_".join(keywords)}_{hash_dict(todo)}'
-    query = f'({" OR ".join(keywords)}) -has:links -is:reply -is:retweet -has:videos -has:images -has:media lang:en'
-    Path(f"./data/{output_folder}").mkdir(parents=True, exist_ok=True)
+        keywords = selected_todo['keywords']
+        output_folder = f'{"_".join(keywords)}_{hash_dict(selected_todo)}'
+        query = f'({" OR ".join(keywords)}) -has:links -is:reply -is:retweet -has:videos -has:images -has:media lang:en'
+        Path(f"./data/{output_folder}").mkdir(parents=True, exist_ok=True)
 
-    current_todo = todo
-    for d in arrow.Arrow.span_range('day', datetime.fromisoformat(todo['start']), datetime.fromisoformat(todo['end'])):
-        if current_todo is not todo:
-            break
+        active_toto = selected_todo
+        for d in arrow.Arrow.span_range('day', datetime.fromisoformat(selected_todo['start']),
+                                        datetime.fromisoformat(selected_todo['end'])):
 
-        s, e = d
+            while channel.queue_declare(queue='task_queue', durable=False).method.message_count > 10:
+                if hash_dict(active_toto) != hash_dict(selected_todo):
+                    break
+                print("sleeping")
+                print(f'{active_toto}  ==?==   {selected_todo}')
+                time.sleep(2)
+            if hash_dict(active_toto) != hash_dict(selected_todo):
+                print("purging")
+                channel.queue_purge('task_queue')
+                break
 
-        ## skip ever if day for to_do already scraped
-        base_name = f'./data/{output_folder}/{s.format("YYYY-MM-DD")}'
-        if isfile(f'{base_name}_raw.json'):
-            print('file already, skipping...')
-            continue
-        else:
-            time.sleep(1)
-            msg_dct = {
-                "query": query,
-                "start": str(s),
-                "end": str(e),
-                "save_as": f'{base_name}_raw.jsonl'
-            }
-            channel.basic_publish(
-                exchange='',
-                routing_key='task_queue',
-                body=json.dumps(msg_dct),
-                properties=pika.BasicProperties(
-                    delivery_mode=1,  # 2 makes message persistent
+            s, e = d
+
+            ## skip ever if day for to_do already scraped
+            base_name = f'./data/{output_folder}/{s.format("YYYY-MM-DD")}'
+            if isfile(f'{base_name}_raw.json'):
+                print('file already, skipping...')
+                continue
+            else:
+                time.sleep(1)
+                msg_dct = {
+                    "query": query,
+                    "start": str(s),
+                    "end": str(e),
+                    "save_as": f'{base_name}'
+                }
+                channel.basic_publish(
+                    exchange='',
+                    routing_key='task_queue',
+                    body=json.dumps(msg_dct),
+                    properties=pika.BasicProperties(
+                        delivery_mode=1,  # 2 makes message persistent
+                    )
                 )
-            )
-            print(f'working on this day: {base_name}_raw.jsonl')
-    else:
-        with open('./todos/finished_jobs.txt', 'a') as af:
-            af.write(f'{json.dumps(todo)}\n')
-        todo = get_next_todo()
+                print(f'working on this day: {base_name}_raw.jsonl')
+        else:
+            with open('./todos/finished_jobs.txt', 'a') as af:
+                af.write(f'{json.dumps(selected_todo)}\n')
+            selected_todo = get_next_todo()
 
 # experiment with this a lot

@@ -1,12 +1,12 @@
 import pika
-import time
-import json
 
-import arrow, json, time
+import json, time
 from TwitterAPI import TwitterAPI, TwitterPager
-from datetime import datetime, timedelta
-from hashlib import md5
-from os.path import isfile
+
+from multiprocessing import Process
+
+# this module should keep track of that in
+workers_count = 0
 
 
 def download_tweets_for_day(api, msg):
@@ -31,7 +31,6 @@ def download_tweets_for_day(api, msg):
         'place.fields': 'contained_within,country,country_code,full_name,geo,id,name,place_type',
     }, hydrate_type=2)
 
-
     with open(f'{save_as}_res.jsonl', 'w') as of:
         for i, item in enumerate(r.get_iterator(wait=5)):
             if 'text' in item:
@@ -43,13 +42,17 @@ def download_tweets_for_day(api, msg):
                 time.sleep(10)
 
     ## store query information
-    with open(f'{save_as[:-10]}_req.jsonl', 'a') as of:
+    with open(f'{save_as[:-10]}req.jsonl', 'a') as of:
         json.dump(r.params, of)
 
 
-def start_worker():
-    consumer_key = 'pNJRnQ12vRHBZYj0HQlB5aEBC'
-    consumer_secret = 'fG2M11dNyYxNhcbzztVyr9T8Z3YG3yOF0iEuJrAFbfvDbCtTTz'
+def start_worker(consumer_key, consumer_secret):
+    global workers_count
+    workers_count += 1
+    print(f'starting worker with {workers_count}')
+
+    # consumer_key = 'pNJRnQ12vRHBZYj0HQlB5aEBC'
+    # consumer_secret = 'fG2M11dNyYxNhcbzztVyr9T8Z3YG3yOF0iEuJrAFbfvDbCtTTz'
     api = TwitterAPI(consumer_key, consumer_secret, auth_type='oAuth2', api_version='2')
 
     connection = pika.BlockingConnection(
@@ -61,8 +64,10 @@ def start_worker():
         msg = body.decode()
         download_tweets_for_day(api, msg)
 
+        # ToDo what would be a good time here?
         time.sleep(7)
-        print(" [x] Done")
+        msg_dct=json.loads(msg)
+        print(" [x] Worked off this day: " + msg_dct['start'])
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     channel.basic_qos(prefetch_count=1)
@@ -71,4 +76,11 @@ def start_worker():
     channel.start_consuming()
 
 
-start_worker()
+def dispatch_workers():
+    with open('./creds.txt', 'r') as f:
+        for l in f:
+            dct_l = json.loads(l)
+            consumer_key = dct_l['consumer_key']
+            consumer_secret = dct_l['consumer_secret']
+            p = Process(target=start_worker, args=(consumer_key, consumer_secret))
+            p.start()

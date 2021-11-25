@@ -68,13 +68,19 @@ def get_next_todo():
     lookup_of_finished_todos = set()
     with open('./todos/finished_jobs.txt', 'r') as f:
         for fin_l in f:
-            fin_dct = json.loads(fin_l)
+            try:
+                fin_dct = json.loads(fin_l)
+            except:
+                continue
             lookup_of_finished_todos.add(hash_dict(fin_dct))
 
     def search_for_todo_in(path):
         with open(path, 'r') as f:
             for todo_l in f:
-                todo_dct = json.loads(todo_l)
+                try:
+                    todo_dct = json.loads(todo_l)
+                except:
+                    continue
                 if hash_dict(todo_dct) not in lookup_of_finished_todos:
                     return todo_dct
             else:
@@ -101,6 +107,7 @@ def produce():
 
         while not selected_todo:
             time.sleep(2)
+            # print('nothing is selected')
 
         logging.warning(f'NEW TODO: {selected_todo}')
 
@@ -113,11 +120,11 @@ def produce():
         for d in arrow.Arrow.span_range('day', datetime.fromisoformat(selected_todo['start']),
                                         datetime.fromisoformat(selected_todo['end'])):
 
-            while channel.queue_declare(queue='task_queue', durable=False).method.message_count > 10:
+            while channel.queue_declare(queue='task_queue', durable=False).method.message_count > 3:
                 if hash_dict(active_toto) != hash_dict(selected_todo):
                     break
-                print("sleeping")
-                print(f'{active_toto}  ==?==   {selected_todo}')
+                # print("sleeping")
+                # print(f'{active_toto}  ==?==   {selected_todo}')
                 time.sleep(2)
             if hash_dict(active_toto) != hash_dict(selected_todo):
                 print("purging")
@@ -128,8 +135,8 @@ def produce():
 
             ## skip ever if day for to_do already scraped
             base_name = f'./data/{output_folder}/{s.format("YYYY-MM-DD")}'
-            if isfile(f'{base_name}_raw.json'):
-                print('file already, skipping...')
+            if isfile(f'{base_name}_res.jsonl'):
+                # print('file already, skipping...')
                 continue
             else:
                 time.sleep(1)
@@ -147,7 +154,7 @@ def produce():
                         delivery_mode=1,  # 2 makes message persistent
                     )
                 )
-                print(f'working on this day: {base_name}_raw.jsonl')
+                print(f'produced job for day: {base_name}_res.jsonl')
         else:
             with open('./todos/finished_jobs.txt', 'a') as af:
                 af.write(f'{json.dumps(selected_todo)}\n')

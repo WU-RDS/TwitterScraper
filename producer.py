@@ -8,8 +8,7 @@ from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-import pika
-import sys
+from asyncio import Lock
 
 from utils import hash_dict
 
@@ -33,13 +32,6 @@ give minimal logging output to let user know what something has been done...
 "needs to be resistant! i.e. if wrong json is entered it won't crash... and will just skip that line until one works... that is sensible..." \
 "does it the iterator get all actually?" \
 "implement manager of passwords..."
-
-connection = pika.BlockingConnection(
-    pika.ConnectionParameters(host='localhost'))
-channel = connection.channel()
-channel.queue_purge('task_queue')
-
-channel.queue_declare(queue='task_queue', durable=False)
 
 
 class PrioQueueHandler(FileSystemEventHandler):
@@ -101,7 +93,8 @@ def get_next_todo():
     return next_todo
 
 
-def produce():
+def produce(qu):
+    q, counter = qu
     global selected_todo
     selected_todo = get_next_todo()
     while True:
@@ -121,7 +114,7 @@ def produce():
         for d in arrow.Arrow.span_range('day', datetime.fromisoformat(selected_todo['start']),
                                         datetime.fromisoformat(selected_todo['end'])):
 
-            while channel.queue_declare(queue='task_queue', durable=False).method.message_count > 3:
+            while counter.value() > 3:
                 if hash_dict(active_toto) != hash_dict(selected_todo):
                     break
                 # print("sleeping")
@@ -129,7 +122,7 @@ def produce():
                 time.sleep(2)
             if hash_dict(active_toto) != hash_dict(selected_todo):
                 print("purging")
-                channel.queue_purge('task_queue')
+                q.clear()
                 break
 
             s, e = d
@@ -147,14 +140,8 @@ def produce():
                     "end": str(e),
                     "save_as": f'{base_name}'
                 }
-                channel.basic_publish(
-                    exchange='',
-                    routing_key='task_queue',
-                    body=json.dumps(msg_dct),
-                    properties=pika.BasicProperties(
-                        delivery_mode=1,  # 2 makes message persistent
-                    )
-                )
+                q.put(msg_dct)
+                counter.increment()
                 print(f'produced job for day: {base_name}_res.jsonl')
         else:
             with open('./todos/finished_jobs.txt', 'a') as af:

@@ -1,7 +1,6 @@
-import pika
-
 import json, time
 from TwitterAPI import TwitterAPI, TwitterPager
+from asyncio import Lock
 
 from multiprocessing import Process
 
@@ -9,8 +8,7 @@ from multiprocessing import Process
 workers_count = 0
 
 
-def download_tweets_for_day(api, msg):
-    msg_dct = json.loads(msg)
+def download_tweets_for_day(api, msg_dct):
     query = msg_dct['query']
     start = msg_dct['start']
     end = msg_dct['end']
@@ -46,7 +44,8 @@ def download_tweets_for_day(api, msg):
         json.dump(r.params, of)
 
 
-def start_worker(consumer_key, consumer_secret):
+def start_worker(qu, consumer_key, consumer_secret):
+    q, counter = qu
     global workers_count
     workers_count += 1
     print(f'starting worker with {workers_count}')
@@ -55,32 +54,22 @@ def start_worker(consumer_key, consumer_secret):
     # consumer_secret = 'fG2M11dNyYxNhcbzztVyr9T8Z3YG3yOF0iEuJrAFbfvDbCtTTz'
     api = TwitterAPI(consumer_key, consumer_secret, auth_type='oAuth2', api_version='2')
 
-    connection = pika.BlockingConnection(
-        pika.ConnectionParameters(host='localhost'))
-    channel = connection.channel()
-    channel.queue_declare(queue='task_queue', durable=False)
+    while True:
+        print('before received')
 
-    def callback(ch, method, properties, body):
-        msg = body.decode()
-        download_tweets_for_day(api, msg)
-
-        # ToDo what would be a good time here?
+        msg_dct = q.get()
+        print('received')
+        download_tweets_for_day(api, msg_dct)
         time.sleep(7)
-        msg_dct=json.loads(msg)
         print(" [x] Worked off this day: " + msg_dct['start'])
-        ch.basic_ack(delivery_tag=method.delivery_tag)
-
-    channel.basic_qos(prefetch_count=1)
-    channel.basic_consume(queue='task_queue', on_message_callback=callback)
-
-    channel.start_consuming()
+        counter.decrement()
 
 
-def dispatch_workers():
+def dispatch_workers(q):
     with open('./creds.txt', 'r') as f:
         for l in f:
             dct_l = json.loads(l)
             consumer_key = dct_l['consumer_key']
             consumer_secret = dct_l['consumer_secret']
-            p = Process(target=start_worker, args=(consumer_key, consumer_secret))
+            p = Process(target=start_worker, args=(q, consumer_key, consumer_secret))
             p.start()

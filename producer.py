@@ -122,7 +122,11 @@ def produce(qu):
                 time.sleep(2)
             if hash_dict(active_toto) != hash_dict(selected_todo):
                 print("purging")
-                q.clear()
+                while not q.empty():
+                    try:
+                        q.get_nowait()
+                    except:
+                        pass
                 break
 
             s, e = d

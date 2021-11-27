@@ -114,7 +114,7 @@ def produce(qu):
         for d in arrow.Arrow.span_range('day', datetime.fromisoformat(selected_todo['start']),
                                         datetime.fromisoformat(selected_todo['end'])):
 
-            while counter.value() > 3:
+            while counter.value() > 7:
                 if hash_dict(active_toto) != hash_dict(selected_todo):
                     break
                 # print("sleeping")

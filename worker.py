@@ -16,7 +16,7 @@ def download_tweets_for_day(api, msg_dct):
 
     # print(save_as)
     # print(end)
-    # print(query)
+    print(query)
     r = TwitterPager(api, 'tweets/search/all', {
         'query': query,
         'max_results': 100,
@@ -41,7 +41,7 @@ def download_tweets_for_day(api, msg_dct):
 
     ## store query information
     with open(f'{save_as[:-10]}req.jsonl', 'a') as of:
-        json.dump(r.params, of)
+        of.write(f'{json.dumps(r.params)}\n')
 
 
 def start_worker(qu, consumer_key, consumer_secret):
@@ -49,9 +49,6 @@ def start_worker(qu, consumer_key, consumer_secret):
     global workers_count
     workers_count += 1
     print(f'starting worker with {workers_count}')
-
-    # consumer_key = 'pNJRnQ12vRHBZYj0HQlB5aEBC'
-    # consumer_secret = 'fG2M11dNyYxNhcbzztVyr9T8Z3YG3yOF0iEuJrAFbfvDbCtTTz'
     api = TwitterAPI(consumer_key, consumer_secret, auth_type='oAuth2', api_version='2')
 
     while True:
